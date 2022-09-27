@@ -1,0 +1,9 @@
+odrive_can:
+  ros__parameters:
+    axis_id_fr_motor: 0
+    axis_id_fl_motor: 1
+    axis_id_rr_motor: 2
+    axis_id_rl_motor: 3
+    dbc_file_path: "/home/carry/odrive-cansimple.dbc"
+    gear_reduction_factor: 28.0
+
