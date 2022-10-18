@@ -193,9 +193,9 @@ class OdriveCAN(Node):
             except can.CanError:
                 print("Message NOT sent!") # TODO: Handle these cases
 
-        time.sleep(3)
+        
         while not in_closed_loop:
-            time.sleep(2)  
+              
             set_closed_loop()
             # Check if axis has transitioned into CLOSED_LOOP_CONTROL
             for msg in self.bus:

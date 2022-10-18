@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import JointState
-
+from time import time
 
 class cmdvel_to_wheelvel(Node):
 
@@ -25,7 +25,29 @@ class cmdvel_to_wheelvel(Node):
         # Create Publishers to publish encoder rpm
         self.motor_cmd_publisher = self.create_publisher(JointState, 'motor/cmd', 5)
 
+        #last cmd_vel received
+        self.last_cmd_vel_received = 0
+        self.watchdog_timer = self.create_timer(1.0, self.cmd_vel_watchdog)
+
+    def cmd_vel_watchdog(self):
+        current_time = time()
+        elapsed_time = current_time - self.last_cmd_vel_received
+
+        if elapsed_time > 5.0:
+            motor_cmd = JointState()
+            motor_cmd.name = ["fr_motor", "fl_motor", "rr_motor", "rl_motor"]
+            motor_cmd.velocity = [0.0, 0.0, 0.0, 0.0]
+            motor_cmd.header.stamp = self.get_clock().now().to_msg()
+            motor_cmd.header.frame_id = "" # TODO: fill this later
+
+            # Publish
+            self.motor_cmd_publisher.publish(motor_cmd)
+
+
     def cmd_vel_callback(self, twist):
+
+        self.last_cmd_vel_received = time()
+
         motor_cmd = JointState()
         motor_cmd.name = ["fr_motor", "fl_motor", "rr_motor", "rl_motor"]
         
