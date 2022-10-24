@@ -3,9 +3,12 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from tf2_ros import TransformBroadcaster
-import tf_transformations
+# import tf_transformations
 from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import Quaternion
 from nav_msgs.msg import Odometry
+import math
+import numpy as np
 
 class cmdvel_to_wheelvel(Node):
 
@@ -13,8 +16,8 @@ class cmdvel_to_wheelvel(Node):
         super().__init__('odometry_node')
 
         # Declare Parameters
-        self.declare_parameter('ticks_meter', 280.0) # The number of wheel encoder ticks per meter of travel = ticks per rotation / (2*pi*r)
-        self.declare_parameter('base_width', 1.0) # The wheel base width in meters
+        self.declare_parameter('ticks_meter', 28.008763607117015) # The number of wheel encoder ticks per meter of travel = ticks per rotation / (2*pi*r)
+        self.declare_parameter('base_width', 0.71755) # The wheel base width in meters
         self.declare_parameter('encoder_min', -34000000000000000000000000000000000000.0) # float32 min
         self.declare_parameter('encoder_max', 34000000000000000000000000000000000000.0)  # float32 max
         self.declare_parameter('base_frame_id', 'base_link')
@@ -59,11 +62,11 @@ class cmdvel_to_wheelvel(Node):
         self.prev_fr_encoder = 0
         self.prev_rl_encoder = 0
         self.prev_rr_encoder = 0
-        self.x = 0                  # position in xy plane
-        self.y = 0
-        self.th = 0
-        self.dx = 0                 # speeds in x/rotation
-        self.dr = 0
+        self.x = 0.0                  # position in xy plane
+        self.y = 0.0
+        self.th = 0.0
+        self.dx = 0.0                 # speeds in x/rotation
+        self.dr = 0.0
         self.new_dataL = False
         self.new_dataR = False
         self.then = self.get_clock().now().to_msg()
@@ -96,7 +99,7 @@ class cmdvel_to_wheelvel(Node):
                 self.rr_mult = self.rr_mult + 1
             if (enc > self.encoder_high_wrap and self.prev_rr_encoder < self.encoder_low_wrap):
                 self.rr_mult = self.rr_mult - 1
-            self.right_right = 1.0 * (enc + self.rr_mult * (self.encoder_max - self.encoder_min))
+            self.rear_right = 1.0 * (enc + self.rr_mult * (self.encoder_max - self.encoder_min))
             self.prev_rr_encoder = enc
 
     def motor_feedback_callback(self, state):
@@ -132,9 +135,9 @@ class cmdvel_to_wheelvel(Node):
             d_rear_left = 0
             d_rear_right = 0
         else:
-            d_front_left =  -1 * (self.front_left - self.enc_front_left) / self.ticks_meter
+            d_front_left =   (self.front_left - self.enc_front_left) / self.ticks_meter
             d_front_right =  (self.front_right - self.enc_front_right) / self.ticks_meter
-            d_rear_left =  -1 * (self.front_left - self.enc_front_left) / self.ticks_meter
+            d_rear_left =   (self.front_left - self.enc_front_left) / self.ticks_meter
             d_rear_right =  (self.front_right - self.enc_front_right) / self.ticks_meter
         self.enc_front_left = self.front_left
         self.enc_front_right = self.front_right
@@ -142,9 +145,9 @@ class cmdvel_to_wheelvel(Node):
         self.enc_rear_right = self.rear_right
 
         # distance traveled is the average of the two wheels
-        d_left = (d_front_left + d_rear_left) / 2
-        d_right = (d_front_right + d_rear_right) / 2
-        d = ( d_left + d_right ) / 2
+        d_left = (d_front_left + d_rear_left) / 2.0
+        d_right = (d_front_right + d_rear_right) / 2.0
+        d = -1.0 * ( d_left + d_right ) / 2.0
         # this approximation works (in radians) for small angles
         th = ( d_right - d_left ) / self.base_width
         # calculate velocities
@@ -167,6 +170,29 @@ class cmdvel_to_wheelvel(Node):
 
         # Publish Odometry
         self.publish_odom()
+
+    def quaternion_from_euler(self, ai, aj, ak):
+        ai /= 2.0
+        aj /= 2.0
+        ak /= 2.0
+        ci = math.cos(ai)
+        si = math.sin(ai)
+        cj = math.cos(aj)
+        sj = math.sin(aj)
+        ck = math.cos(ak)
+        sk = math.sin(ak)
+        cc = ci*ck
+        cs = ci*sk
+        sc = si*ck
+        ss = si*sk
+
+        q = np.empty((4, ))
+        q[0] = cj*sc - sj*cs
+        q[1] = cj*ss + sj*cc
+        q[2] = cj*cs - sj*sc
+        q[3] = cj*cc + sj*ss
+
+        return q
     
     def publish_odom(self):
         odom_msg = Odometry()
@@ -174,12 +200,14 @@ class cmdvel_to_wheelvel(Node):
         odom_msg.header.frame_id = self.odom_frame_id
         odom_msg.pose.pose.position.x = self.x
         odom_msg.pose.pose.position.y = self.y
-        odom_msg.pose.pose.position.z = 0
-        q = tf_transformations.quaternion_from_euler(0, 0, self.th)
-        odom_msg.pose.pose.orientation = q
+        odom_msg.pose.pose.position.z = 0.0
+        q = self.quaternion_from_euler(0, 0, self.th)
+        # Convert a list to geometry_msgs.msg.Quaternion
+        msg_quat = Quaternion(x=q[0], y=q[1], z=q[2], w=q[3])
+        odom_msg.pose.pose.orientation = msg_quat
         odom_msg.child_frame_id = self.base_frame_id
         odom_msg.twist.twist.linear.x = self.dx
-        odom_msg.twist.twist.linear.y = 0
+        odom_msg.twist.twist.linear.y = 0.0
         odom_msg.twist.twist.angular.z = self.dr
         self.odom_publisher.publish(odom_msg)
 
@@ -194,7 +222,7 @@ class cmdvel_to_wheelvel(Node):
         t.transform.translation.x = self.x
         t.transform.translation.y = self.y
         t.transform.translation.z = 0.0
-        q = tf_transformations.quaternion_from_euler(0, 0, self.th)
+        q = self.quaternion_from_euler(0, 0, self.th)
         t.transform.rotation.x = q[0]
         t.transform.rotation.y = q[1]
         t.transform.rotation.z = q[2]

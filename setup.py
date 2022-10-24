@@ -27,6 +27,7 @@ setup(
              'odrive_can_node = odrive_can.odrive_can:main',
              'cmdvel_to_wheelvel_node = odrive_can.cmdvel_to_wheelvel:main',
              'odometry_node = odrive_can.odometry:main',
+             'fake_encoder_node = odrive_can.fake_encoder_pub:main'
         ],
     },
 )
