@@ -22,11 +22,18 @@ def generate_launch_description():
         parameters = [odrive_params_file]
         )
 
+    odometry_node_cmd = Node(
+        package='odrive_can',
+        executable='odometry_node',
+        output='screen'
+        )
+
 
 # Create the launch description and populate
     ld = LaunchDescription()
 
     ld.add_action(declare_params_file_cmd)
     ld.add_action(odrive_node_cmd)
+    ld.add_action(odometry_node_cmd)
 
     return ld
