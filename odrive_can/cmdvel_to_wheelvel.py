@@ -33,7 +33,7 @@ class cmdvel_to_wheelvel(Node):
         current_time = time()
         elapsed_time = current_time - self.last_cmd_vel_received
 
-        if elapsed_time > 5.0:
+        if elapsed_time > 0.5:
             motor_cmd = JointState()
             motor_cmd.name = ["fr_motor", "fl_motor", "rr_motor", "rl_motor"]
             motor_cmd.velocity = [0.0, 0.0, 0.0, 0.0]
