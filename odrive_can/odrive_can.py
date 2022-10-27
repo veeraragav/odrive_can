@@ -32,18 +32,17 @@ class OdriveCAN(Node):
         self.bus = can.Bus("can0", bustype="socketcan")
 
         self._motors = {
-            "fr_motor": Motor(self.axis_id_fr_motor, Motor.REVERSE, self.gear_reduction_factor),
-            "fl_motor": Motor(self.axis_id_fl_motor, Motor.REVERSE, self.gear_reduction_factor),
-            "rr_motor": Motor(self.axis_id_rr_motor, Motor.FORWARD, self.gear_reduction_factor),
-            "rl_motor": Motor(self.axis_id_rl_motor, Motor.FORWARD, self.gear_reduction_factor),
+            "fr_motor": Motor(self.bus, self.axis_id_fr_motor, Motor.REVERSE, self.gear_reduction_factor),
+            "fl_motor": Motor(self.bus, self.axis_id_fl_motor, Motor.REVERSE, self.gear_reduction_factor),
+            "rr_motor": Motor(self.bus, self.axis_id_rr_motor, Motor.FORWARD, self.gear_reduction_factor),
+            "rl_motor": Motor(self.bus, self.axis_id_rl_motor, Motor.FORWARD, self.gear_reduction_factor),
         }
         self._cmd = {motor: Motor.STOP for motor in self._motors}
 
-        # Calibration Routine
-        self.odrive_initial_setup(self.axis_id_fr_motor)
-        self.odrive_initial_setup(self.axis_id_fl_motor)
-        self.odrive_initial_setup(self.axis_id_rr_motor)
-        self.odrive_initial_setup(self.axis_id_rl_motor)
+        
+
+        self.odrive_initial_setup_timer = self.create_timer(0.009, self.odrive_inital_setup_timer_callback)
+
 
         # Create a Publisher to publish encoder rpm
         self.feedback_publisher = self.create_publisher(JointState, 'motor/status', 10)
@@ -62,6 +61,15 @@ class OdriveCAN(Node):
         # Create a Subscriber to subscibe to velocity command
         self.subscription = self.create_subscription(JointState, 'motor/cmd', self.motor_cmd_subscriber_callback, 10)
         self.subscription  # prevent unused variable warning
+
+    def odrive_inital_setup_timer_callback(self):
+        # Calibration Routine
+        self.odrive_initial_setup(self.axis_id_fr_motor)
+        self.odrive_initial_setup(self.axis_id_fl_motor)
+        self.odrive_initial_setup(self.axis_id_rr_motor)
+        self.odrive_initial_setup(self.axis_id_rl_motor)
+        self.odrive_initial_setup_timer.cancel()
+        pass
 
     def motor_cmd_subscriber_callback(self, cmd):
         # TODO: mutex lock self._cmd
@@ -215,7 +223,7 @@ class OdriveCAN(Node):
         # if not watchdog.valid():
         #     self.halt()
         #     return
-        for motor_name, motor_rpm in zip(self._cmd.name, self._cmd.velocity):
+        for motor_name, motor_rpm in self._cmd.items():
             motor = self._motors[motor_name]
             motor.set_rpm(motor_rpm)
 
@@ -232,13 +240,14 @@ class Motor:
         self._axis_id = axis_id
         self._direction = direction
         self._gear_reduction = gear_reduction_factor
+        self._db = cantools.database.load_file("/home/carry/odrive-cansimple.dbc")
 
         # TODO: initialize motor here instead of at parent scope
         # odrive_initial_setup(self._axis_id)
 
     def set_rpm(self, rpm: float):
-        rps = (rpm / 60.0) * self.gear_reduction_factor * self._direction
-        data = self.db.encode_message('Set_Input_Vel', {'Input_Vel': rps, 'Input_Torque_FF': 100.0})
+        rps = (rpm / 60.0) * self._gear_reduction * self._direction
+        data = self._db.encode_message('Set_Input_Vel', {'Input_Vel': rps, 'Input_Torque_FF': 100.0})
         msg = can.Message(arbitration_id=self._axis_id << 5 | 0x00D, data=data, is_extended_id=False)
         # TODO: mutex lock the can bus for concurrent access?
         # May conflict with feedback loop
