@@ -31,6 +31,14 @@ class OdriveCAN(Node):
         self.db = cantools.database.load_file(self.dbc_file_path)
         self.bus = can.Bus("can0", bustype="socketcan")
 
+        self._motors = {
+            "fr_motor": Motor(self.axis_id_fr_motor, Motor.REVERSE, self.gear_reduction_factor),
+            "fl_motor": Motor(self.axis_id_fl_motor, Motor.REVERSE, self.gear_reduction_factor),
+            "rr_motor": Motor(self.axis_id_rr_motor, Motor.FORWARD, self.gear_reduction_factor),
+            "rl_motor": Motor(self.axis_id_rl_motor, Motor.FORWARD, self.gear_reduction_factor),
+        }
+        self._cmd = {motor: Motor.STOP for motor in self._motors}
+
         # Calibration Routine
         self.odrive_initial_setup(self.axis_id_fr_motor)
         self.odrive_initial_setup(self.axis_id_fl_motor)
@@ -40,7 +48,13 @@ class OdriveCAN(Node):
         # Create a Publisher to publish encoder rpm
         self.feedback_publisher = self.create_publisher(JointState, 'motor/status', 10)
         timer_period = 0.009 # 0.009 seconds = 110 Hz
+        # TODO: consider refactoring the publisher feedback to process a
+        # deterministic number of messages in the queue, it is dangerous
+        # to rely on flags in a loop of critical hardware
         self.feedback_publisher_timer = self.create_timer(timer_period, self.feedback_publisher_callback)
+
+        # TODO: what freqency is appropriate here?
+        self.update_timer = self.create_timer(timer_period, self.update)
 
         # Create a Publisher to publish motor diagnostics
         self.diagnostics_publisher = self.create_publisher(Int32MultiArray, 'motor/diagnostics', 10)
@@ -50,38 +64,23 @@ class OdriveCAN(Node):
         self.subscription  # prevent unused variable warning
 
     def motor_cmd_subscriber_callback(self, cmd):
-        i = 0
-        for motor in cmd.name:
-            if motor == "fr_motor":
-                rpm = cmd.velocity[i]
-                rps = (rpm / 60.0) * self.gear_reduction_factor * -1.0
-                data = self.db.encode_message('Set_Input_Vel', {'Input_Vel':rps, 'Input_Torque_FF':100.0})
-                msg = can.Message(arbitration_id=self.axis_id_fr_motor << 5 | 0x00D, data=data, is_extended_id=False)
-                self.bus.send(msg)
-                i = i + 1
-            elif motor == "fl_motor":
-                rpm = cmd.velocity[i]
-                rps = (rpm / 60.0) * self.gear_reduction_factor * -1.0
-                data = self.db.encode_message('Set_Input_Vel', {'Input_Vel':rps, 'Input_Torque_FF':100.0})
-                msg = can.Message(arbitration_id=self.axis_id_fl_motor << 5 | 0x00D, data=data, is_extended_id=False)
-                self.bus.send(msg)
-                i = i + 1
-            elif motor == "rr_motor":
-                rpm = cmd.velocity[i]
-                rps = (rpm / 60.0) * self.gear_reduction_factor
-                data = self.db.encode_message('Set_Input_Vel', {'Input_Vel':rps, 'Input_Torque_FF':100.0})
-                msg = can.Message(arbitration_id=self.axis_id_rr_motor << 5 | 0x00D, data=data, is_extended_id=False)
-                self.bus.send(msg)
-                i = i + 1
-            elif motor == "rl_motor":
-                rpm = cmd.velocity[i]
-                rps = (rpm / 60.0) * self.gear_reduction_factor
-                data = self.db.encode_message('Set_Input_Vel', {'Input_Vel':rps, 'Input_Torque_FF':100.0})
-                msg = can.Message(arbitration_id=self.axis_id_rl_motor << 5 | 0x00D, data=data, is_extended_id=False)
-                self.bus.send(msg)
-                i = i + 1
-            else:
+        # TODO: mutex lock self._cmd
+
+        if len(cmd.name) != len(cmd.velocity):
+            self.get_logger().error('Invalid command. Length of joint names'
+                                    ' and commands do not match. '
+                                    f'{len(cmd.name)} != {len(cmd.velocity)}')
+            return
+        # Else update all motors:
+        for motor_name, motor_rpm in zip(cmd.name, cmd.velocity):
+            try:
+                self._cmd[motor_name] = motor_rpm
+            except KeyError as kerr:
+                # TODO: log error
+                self.get_logger().error(f'Invalid motor name: {kerr}')
                 pass
+        # TODO: this is where you would feed the watchdog
+        # self.watchdog.feed()
 
     def feedback_publisher_callback(self):
         # Create the JointState msg
@@ -193,7 +192,6 @@ class OdriveCAN(Node):
             except can.CanError:
                 print("Message NOT sent!") # TODO: Handle these cases
 
-
         while not in_closed_loop:
 
             set_closed_loop()
@@ -208,6 +206,46 @@ class OdriveCAN(Node):
                         self.get_logger().error("Axis  %s failed to enter closed loop" % axisID)
                     break
 
+    def halt(self):
+        for motor in self._motors:
+            motor.halt()
+
+    def update(self):
+        # TODO: check the watchdog here, if we havent received a command recently, halt!
+        # if not watchdog.valid():
+        #     self.halt()
+        #     return
+        for motor_name, motor_rpm in zip(self._cmd.name, self._cmd.velocity):
+            motor = self._motors[motor_name]
+            motor.set_rpm(motor_rpm)
+
+
+class Motor:
+    FORWARD = 1.0
+    REVERSE = -1.0
+    STOP = 0.0
+    DEFAULT_GEAR_REDUCTION_FACTOR = 1.0
+
+    def __init__(self, bus: can.Bus, axis_id: int, direction: float = FORWARD,
+                 gear_reduction_factor: float = DEFAULT_GEAR_REDUCTION_FACTOR):
+        self._bus = bus
+        self._axis_id = axis_id
+        self._direction = direction
+        self._gear_reduction = gear_reduction_factor
+
+        # TODO: initialize motor here instead of at parent scope
+        # odrive_initial_setup(self._axis_id)
+
+    def set_rpm(self, rpm: float):
+        rps = (rpm / 60.0) * self.gear_reduction_factor * self._direction
+        data = self.db.encode_message('Set_Input_Vel', {'Input_Vel': rps, 'Input_Torque_FF': 100.0})
+        msg = can.Message(arbitration_id=self._axis_id << 5 | 0x00D, data=data, is_extended_id=False)
+        # TODO: mutex lock the can bus for concurrent access?
+        # May conflict with feedback loop
+        self._bus.send(msg)
+
+    def halt(self):
+        self.set_rpm(self.STOP)
 
 
 def main(args=None):
