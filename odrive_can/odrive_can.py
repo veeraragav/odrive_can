@@ -4,7 +4,7 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Int32MultiArray
 import can
 import cantools
-import time 
+import time
 
 class OdriveCAN(Node):
 
@@ -27,7 +27,7 @@ class OdriveCAN(Node):
         self.dbc_file_path = self.get_parameter('dbc_file_path').value
         self.gear_reduction_factor = self.get_parameter('gear_reduction_factor').value
 
-        # Instantiate the CAN bus 
+        # Instantiate the CAN bus
         self.db = cantools.database.load_file(self.dbc_file_path)
         self.bus = can.Bus("can0", bustype="socketcan")
 
@@ -39,7 +39,7 @@ class OdriveCAN(Node):
 
         # Create a Publisher to publish encoder rpm
         self.feedback_publisher = self.create_publisher(JointState, 'motor/status', 10)
-        timer_period = 0.009 # 0.009 seconds = 110 Hz 
+        timer_period = 0.009 # 0.009 seconds = 110 Hz
         self.feedback_publisher_timer = self.create_timer(timer_period, self.feedback_publisher_callback)
 
         # Create a Publisher to publish motor diagnostics
@@ -82,7 +82,7 @@ class OdriveCAN(Node):
                 i = i + 1
             else:
                 pass
-  
+
     def feedback_publisher_callback(self):
         # Create the JointState msg
         feedback_msg = JointState()
@@ -102,7 +102,7 @@ class OdriveCAN(Node):
             cmd_id = msg.arbitration_id & 31 # last 5 bits
             node_id = (msg.arbitration_id & 2016) >> 5 # first 6 bits
 
-            if cmd_id == 9:  
+            if cmd_id == 9:
                 encoder_estimates = self.db.decode_message('Get_Encoder_Estimates', msg.data)
                 vel_estimate = encoder_estimates['Vel_Estimate'] * 60.0 / self.gear_reduction_factor
                 pos_estimate = encoder_estimates['Pos_Estimate']
@@ -145,7 +145,7 @@ class OdriveCAN(Node):
 
         # Publish
         self.feedback_publisher.publish(feedback_msg)
-               
+
     def odrive_initial_setup(self, axisID):
         # Transition to MOTOR_CALIBRATION state
         self.get_logger().info('Transitioning Axis %s into MOTOR_CALIBRATION (0x04)' % axisID)
@@ -170,7 +170,7 @@ class OdriveCAN(Node):
                     self.get_logger().info("Calibration Done. Axis %s has returned to Idle state." % axisID)
                     break
 
-        # Check for any errors 
+        # Check for any errors
         for msg in self.bus:
             if msg.arbitration_id == ((axisID << 5) | self.db.get_message_by_name('Heartbeat').frame_id):
                 errorCode = self.db.decode_message('Heartbeat', msg.data)['Axis_Error']
@@ -193,9 +193,9 @@ class OdriveCAN(Node):
             except can.CanError:
                 print("Message NOT sent!") # TODO: Handle these cases
 
-        
+
         while not in_closed_loop:
-              
+
             set_closed_loop()
             # Check if axis has transitioned into CLOSED_LOOP_CONTROL
             for msg in self.bus:
