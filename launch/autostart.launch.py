@@ -9,14 +9,17 @@ from launch_ros.actions import Node
 def generate_launch_description():
 
     odrive_dir = get_package_share_directory('odrive_can')
+    cmd_vel_mux_dir = get_package_share_directory('cmd_vel_mux')
+    ublox_dir = get_package_share_directory('ublox_gps')
+    thingstream_dir = get_package_share_directory('thingstream_client')
 
     joy_config = LaunchConfiguration('joy_config')
     joy_dev = LaunchConfiguration('joy_dev')
     config_filepath = LaunchConfiguration('config_filepath')
 
 
-    joy_vel_cmd = DeclareLaunchArgument('joy_vel', default_value='cmd_vel')
-    joy_config_cmd = DeclareLaunchArgument('joy_config', default_value='frisky')
+    joy_vel_cmd = DeclareLaunchArgument('joy_vel', default_value='/joy/cmd_vel')
+    joy_config_cmd = DeclareLaunchArgument('joy_config', default_value='mtg_xbox_wired')
     joy_dev_cmd = DeclareLaunchArgument('joy_dev', default_value='/dev/input/js0')
     config_filepath_cmd = DeclareLaunchArgument('config_filepath', default_value=[
             TextSubstitution(text=os.path.join(
@@ -45,10 +48,22 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(odrive_dir, 'launch/odrive_can.launch.py')))
 
+    cmd_vel_mux_cmd= IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(cmd_vel_mux_dir, 'launch/cmd_vel_mux-launch.py')))
+
     cmdvel_to_wheelvel_cmd = Node(
         package='odrive_can',
         executable='cmdvel_to_wheelvel_node'
         )
+
+    ublox_gps_cmd= IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(ublox_dir, 'launch/ublox_gps_node_multi-launch.py')))
+
+    thingstream_client_cmd= IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(thingstream_dir, 'launch/thingstream_client.launch.py')))
 
 
 # Create the launch description and populate
@@ -63,5 +78,10 @@ def generate_launch_description():
 
     ld.add_action(odrive_node_cmd)
     ld.add_action(cmdvel_to_wheelvel_cmd)
+    ld.add_action(cmd_vel_mux_cmd)
+
+    ld.add_action(ublox_gps_cmd)
+    ld.add_action(thingstream_client_cmd)
+
 
     return ld
