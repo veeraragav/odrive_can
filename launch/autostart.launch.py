@@ -52,11 +52,6 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(cmd_vel_mux_dir, 'launch/cmd_vel_mux-launch.py')))
 
-    cmdvel_to_wheelvel_cmd = Node(
-        package='odrive_can',
-        executable='cmdvel_to_wheelvel_node'
-        )
-
     ublox_gps_cmd= IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(ublox_dir, 'launch/ublox_gps_node_multi-launch.py')))
@@ -77,7 +72,7 @@ def generate_launch_description():
     ld.add_action(joy_teleop_cmd)
 
     ld.add_action(odrive_node_cmd)
-    ld.add_action(cmdvel_to_wheelvel_cmd)
+    
     ld.add_action(cmd_vel_mux_cmd)
 
     ld.add_action(ublox_gps_cmd)

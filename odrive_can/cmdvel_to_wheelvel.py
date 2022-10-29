@@ -27,7 +27,7 @@ class cmdvel_to_wheelvel(Node):
 
         #last cmd_vel received
         self.last_cmd_vel_received = 0
-        self.watchdog_timer = self.create_timer(1.0, self.cmd_vel_watchdog)
+        self.watchdog_timer = self.create_timer(0.5, self.cmd_vel_watchdog)
 
     def cmd_vel_watchdog(self):
         current_time = time()

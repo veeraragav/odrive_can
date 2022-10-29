@@ -28,6 +28,11 @@ def generate_launch_description():
         output='screen'
         )
 
+    cmdvel_to_wheelvel_cmd = Node(
+        package='odrive_can',
+        executable='cmdvel_to_wheelvel_node'
+        )
+
 
 # Create the launch description and populate
     ld = LaunchDescription()
@@ -35,5 +40,6 @@ def generate_launch_description():
     ld.add_action(declare_params_file_cmd)
     ld.add_action(odrive_node_cmd)
     ld.add_action(odometry_node_cmd)
+    ld.add_action(cmdvel_to_wheelvel_cmd)
 
     return ld
